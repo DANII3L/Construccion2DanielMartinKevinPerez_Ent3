@@ -2,8 +2,11 @@ package tdea.construccion2.app.dto;
 
 import java.sql.Date;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import tdea.construccion2.app.models.Facture;
 
+@JsonIgnoreProperties({"id", "ownerId"})
 public class FactureDto {
 	private int id;
 	private int petId;
@@ -32,6 +35,10 @@ public class FactureDto {
 		this.cost = facture.getCost();
 		this.amount = facture.getAmount();
 		this.date = facture.getDate();
+	}
+	
+	public FactureDto() {
+		this.date = new Date(System.currentTimeMillis());;
 	}
 	
 	public int getId() {

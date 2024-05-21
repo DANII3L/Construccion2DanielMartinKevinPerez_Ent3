@@ -1,7 +1,10 @@
 package tdea.construccion2.app.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import tdea.construccion2.app.models.Pet;
 
+@JsonIgnoreProperties({"id"})
 public class PetDto {
 	private int id;
 	private String name;

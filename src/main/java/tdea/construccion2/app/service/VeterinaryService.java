@@ -3,7 +3,10 @@ package tdea.construccion2.app.service;
 import java.util.Arrays;
 import java.util.List;
 
+import org.apache.tomcat.util.net.openssl.ciphers.Authentication;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.stereotype.Service;
 
 import tdea.construccion2.app.dao.PetDao;
@@ -11,7 +14,6 @@ import tdea.construccion2.app.dao.HistoryClinicalDao;
 import tdea.construccion2.app.dao.PersonDao;
 import tdea.construccion2.app.dao.FactureDao;
 import tdea.construccion2.app.dao.LoginDao;
-import tdea.construccion2.app.dao.LoginDaoImp;
 import tdea.construccion2.app.dao.OrderDao;
 import tdea.construccion2.app.dto.FactureDto;
 import tdea.construccion2.app.dto.HistoryClinicalDto;
@@ -19,6 +21,8 @@ import tdea.construccion2.app.dto.OrderDto;
 import tdea.construccion2.app.dto.PersonDto;
 import tdea.construccion2.app.dto.PetDto;
 import tdea.construccion2.app.dto.SessionDto;
+import tdea.construccion2.app.jwt.CustomerDetailsService;
+import tdea.construccion2.app.jwt.JwtUtil;
 
 @Service
 public class VeterinaryService implements VeterinarianService, LoginService, HistorialClinicalService, OrderService {
@@ -38,36 +42,43 @@ public class VeterinaryService implements VeterinarianService, LoginService, His
 	private FactureDao factureDao;
 	@Autowired
 	private HistoryClinicalDao historyDao;
+	@Autowired
+	private AuthenticationManager authenticationManager;
+	@Autowired
+	private JwtUtil jwtUtil;
+	@Autowired
+	private CustomerDetailsService customerDetailsService;
 
 	@Override
-	public void createUser(PersonDto personDto, String rol) throws Exception {
+	public String createUser(PersonDto personDto, String rol) throws Exception {
 		if (rol.equals("Administrador")) {
 			if (!rolesAdmin.contains(personDto.getRol()))
-				throw new Exception("el rol no es valido");
+				throw new  RuntimeException("el rol no es valido");
 		} else {
 			if (!rolVet.equals(personDto.getRol()))
-				throw new Exception("el rol no es valido");
+				throw new RuntimeException("el rol no es valido");
 		}
 
 		if (personDao.findUserExist(personDto))
-			throw new Exception("ya existe un usuario con esa cedula");
+			throw new RuntimeException("ya existe un usuario con esa cedula");
 
 		if (personDao.existUserByUserName(personDto))
-			throw new Exception("ya existe el usuario");
+			throw new RuntimeException("ya existe el usuario");
 
 		personDao.createPerson(personDto);
-		System.out.println("se ha creado el usuario");
+		
+		return "Usuario creado exitosamente!";
 	}
 
 	@Override
-	public void createFacture(FactureDto factureDto) throws Exception {
+	public String createFacture(FactureDto factureDto) throws Exception {
 
 		List<HistoryClinicalDto> listHistorySearch = consultHistoryClinical(
 				new HistoryClinicalDto(factureDto.getOrderId()));
 
 		for (HistoryClinicalDto HistoryDtoSearch : listHistorySearch)
 			if (HistoryDtoSearch.getOrderCancellation())
-				throw new Exception(
+				throw new RuntimeException(
 						"No se puede realizar la venta de medicamentos debido a que la orden a sido cancelada.");
 
 		PetDto pet = petDao.findById(new PetDto(factureDto.getPetId()));
@@ -80,16 +91,16 @@ public class VeterinaryService implements VeterinarianService, LoginService, His
 
 		PersonDto ownerSearch = personDao.findUserById(new PersonDto(factureDto.getOwnerId()));
 		if (ownerSearch == null)
-			throw new Exception("No existe el dueño.");
+			throw new RuntimeException("No existe el dueño.");
 		else if (!ownerSearch.getRol().equals("Dueño"))
-			throw new Exception(
+			throw new RuntimeException(
 					"El usuario selecciona no es dueño de mascotas, tiene el rol de " + ownerSearch.getRol() + ".");
 
 		if (!orderDao.findOrderExist(new OrderDto(factureDto.getOrderId())))
-			throw new Exception("No existe la orden.");
+			throw new RuntimeException("No existe la orden.");
 
 		factureDao.createFacture(factureDto);
-		System.out.println("se ha creado la factura");
+		return "se ha creado la factura";
 	}
 
 	@Override
@@ -98,18 +109,27 @@ public class VeterinaryService implements VeterinarianService, LoginService, His
 	}
 
 	@Override
-	public void login(PersonDto personDto) throws Exception {
+	public String login(PersonDto personDto) throws Exception {
 		PersonDto personDtoValidate = personDao.findUserByUserName(personDto);
-		if (personDtoValidate == null)
-			throw new Exception("usuario no valido");
 
-		if (!personDto.getPassword().equals(personDtoValidate.getPassword()))
-			throw new Exception("usuario o contraseña incorrectos");
-
-		personDto.setRol(personDtoValidate.getRol());
-		SessionDto sesionDto = loginDao.login(personDtoValidate);
-		setSesionID(sesionDto.getId());
-		System.out.println("se inicia la sesion " + sessionId);
+		try {
+			org.springframework.security.core.Authentication authentication = authenticationManager.authenticate(
+					new UsernamePasswordAuthenticationToken(personDto.getUserName(), personDto.getPassword())
+					);
+			
+			if (authentication.isAuthenticated())
+			{
+				personDto.setRol(personDtoValidate.getRol());
+				SessionDto sesionDto = loginDao.login(personDtoValidate);
+				setSesionID(sesionDto.getId());
+				
+				return "{\"token\" : \""+ jwtUtil.generateToken(personDtoValidate.getUserName(), personDtoValidate.getRol()) + "\"}";
+			}else
+				throw new RuntimeException("usuario o contraseña incorrectos");
+			
+		}catch (Exception ex){
+			throw new RuntimeException(ex.getMessage());
+		}
 	}
 
 	@Override
@@ -119,11 +139,16 @@ public class VeterinaryService implements VeterinarianService, LoginService, His
 	}
 
 	@Override
-	public void createPet(PetDto petDto) throws Exception {
-		if (!personDao.findUserExist(new PersonDto(petDto.getOwnerId())))
-			throw new Exception("No existe el dueño.");
+	public String createPet(PetDto petDto) throws Exception {
+		
+		PersonDto owner = personDao.findUserById(new PersonDto(petDto.getOwnerId()));
+		if (owner==null)
+			throw new RuntimeException("No existe el dueño.");
+		else if(!owner.getRol().equals("Dueño"))
+			throw new RuntimeException("El usuario seleccionado no tiene rol de dueño.");
+		
 		petDao.createPet(petDto);
-		System.out.println("Se ha creado la mascota");
+		return "Se ha creado la mascota";
 	}
 
 	@Override
@@ -132,27 +157,26 @@ public class VeterinaryService implements VeterinarianService, LoginService, His
 	}
 
 	@Override
-	public void createHistoryClinical(HistoryClinicalDto historyClinicalDto) throws Exception {
+	public String createHistoryClinical(HistoryClinicalDto historyClinicalDto) throws Exception {
 		PetDto petDto = petDao.findById(new PetDto(historyClinicalDto.getPetId()));
 		if (petDto == null)
-			throw new Exception("No existe la mascota.");
+			throw new RuntimeException("No existe la mascota.");
 		if (!personDao.findUserExist(new PersonDto(historyClinicalDto.getVetId())))
-			throw new Exception("No existe el veterinario.");
+			throw new RuntimeException("No existe el veterinario.");
 
 		OrderDto orderCreate = createOrdern(new OrderDto(historyClinicalDto.getPetId(), petDto.getOwnerId(),
 				historyClinicalDto.getVetId(), historyClinicalDto.getMedicament(), historyClinicalDto.getDate()));
 
 		historyClinicalDto.setOrderID(orderCreate.getId());
 
-		// Creación de historia clinica
 		historyDao.createHistory(historyClinicalDto);
-		System.out.println("Se ha creado la historia clinica");
+		return "Se ha creado la historia clinica";
 	}
 
 	public OrderDto consultOrdern(OrderDto orderDto) throws Exception {
 		OrderDto orderSearch = orderDao.searchOrder(new OrderDto(orderDto.getId()));
-		if (orderSearch == null)
-			System.out.println("No se ha encontrado una orden");
+		//if (orderSearch == null)
+			//System.out.println("No se ha encontrado una orden");
 
 		return orderSearch;
 	}
@@ -160,24 +184,17 @@ public class VeterinaryService implements VeterinarianService, LoginService, His
 	@Override
 	public void cancelOrdern(OrderDto orderDto) throws Exception {
 		OrderDto orderSearch = orderDao.searchOrder(new OrderDto(orderDto.getId()));
-		if (orderSearch == null)
-			System.out.println("No se ha encontrado una orden");
+		//if (orderSearch == null)
+			//System.out.println("No se ha encontrado una orden");
 
 		historyDao.cancelOrder(orderSearch.getId());
-		/*
-		 * List<HistoryClinicalDto> listHistory = this.consultHistoryClinical(new
-		 * HistoryClinicalDto(orderSearch.getId()));
-		 * 
-		 * for (HistoryClinicalDto elemento : listHistory) { historyDao.cancelOrder(new
-		 * HistoryClinicalDto(orderSearch.getId())); }
-		 */
 	}
 
 	@Override
 	public OrderDto createOrdern(OrderDto orderDto) throws Exception {
 		OrderDto orderCreate = orderDao.createOrder(orderDto);
 		if (orderCreate == null)
-			throw new Exception("No se ha creado la orden.");
+			throw new RuntimeException("No se ha creado la orden.");
 		return orderCreate;
 	}
 
@@ -185,11 +202,11 @@ public class VeterinaryService implements VeterinarianService, LoginService, His
 	public long findMedicoIdSesion() throws Exception {
 		SessionDto session = loginDao.findSessionById(sessionId);
 		if (session == null)
-			throw new Exception("No se ha encontrado la sesión actual.");
+			throw new RuntimeException("No se ha encontrado la sesión actual.");
 
 		PersonDto personDto = personDao.findUserByUserName(new PersonDto(session.getUserName()));
 		if (personDto == null)
-			throw new Exception("No se ha encontrado el medico de la sesión actual.");
+			throw new RuntimeException("No se ha encontrado el medico de la sesión actual.");
 
 		return personDto.getCedula();
 	}
@@ -240,5 +257,29 @@ public class VeterinaryService implements VeterinarianService, LoginService, His
 
 	public void setHistoryDao(HistoryClinicalDao historyDao) {
 		this.historyDao = historyDao;
+	}
+
+	public AuthenticationManager getAuthenticationManager() {
+		return authenticationManager;
+	}
+
+	public void setAuthenticationManager(AuthenticationManager authenticationManager) {
+		this.authenticationManager = authenticationManager;
+	}
+
+	public JwtUtil getJwtUtil() {
+		return jwtUtil;
+	}
+
+	public void setJwtUtil(JwtUtil jwtUtil) {
+		this.jwtUtil = jwtUtil;
+	}
+
+	public CustomerDetailsService getCustomerDetailsService() {
+		return customerDetailsService;
+	}
+
+	public void setCustomerDetailsService(CustomerDetailsService customerDetailsService) {
+		this.customerDetailsService = customerDetailsService;
 	}
 }

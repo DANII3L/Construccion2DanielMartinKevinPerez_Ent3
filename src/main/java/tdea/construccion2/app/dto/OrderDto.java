@@ -2,8 +2,11 @@ package tdea.construccion2.app.dto;
 
 import java.sql.Date;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import tdea.construccion2.app.models.Order;
 
+@JsonIgnoreProperties({"id", "vetId"})
 public class OrderDto {
 	private int id;
 	private int petId;
@@ -40,6 +43,9 @@ public class OrderDto {
 	
 	public OrderDto(int id) {
 		this.id = id;
+	}
+	
+	public OrderDto() {
 	}
 
 	public int getId() {

@@ -10,7 +10,7 @@ public interface LoginService {
 	
 	public long findMedicoIdSesion() throws Exception;
 
-	public void login(PersonDto personDto) throws Exception;
+	public String login(PersonDto personDto) throws Exception;
 
 	public void logout() throws Exception;
 }

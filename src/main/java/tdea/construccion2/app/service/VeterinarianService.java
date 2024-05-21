@@ -8,9 +8,9 @@ import tdea.construccion2.app.dto.PetDto;
 
 @Component
 public interface VeterinarianService {
-	public void createUser(PersonDto personDto, String rol) throws Exception;
+	public String createUser(PersonDto personDto, String rol) throws Exception;
 
-	public void createPet(PetDto petDto) throws Exception;
+	public String createPet(PetDto petDto) throws Exception;
 
-	public void createFacture(FactureDto factureDto) throws Exception;
+	public String createFacture(FactureDto factureDto) throws Exception;
 }

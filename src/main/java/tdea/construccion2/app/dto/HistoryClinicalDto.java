@@ -1,8 +1,12 @@
 package tdea.construccion2.app.dto;
 
 import java.sql.Date;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import tdea.construccion2.app.models.HistoryClinical;
 
+@JsonIgnoreProperties({"date", "vetId", "orderID"})
 public class HistoryClinicalDto {
 	private Date date;
 	private int petId;
@@ -20,6 +24,7 @@ public class HistoryClinicalDto {
 	private boolean orderCancellation;
 
 	public HistoryClinicalDto() {
+		this.date = new Date(System.currentTimeMillis());
 	}
 	
 	public HistoryClinicalDto(int orderID) {
